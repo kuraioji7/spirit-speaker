@@ -1,0 +1,6 @@
+easyocr~=1.7.1
+numpy~=1.26.3
+PyAutoGUI~=0.9.54
+audioplayer~=0.6
+gTTS~=2.5.0
+pynput~=1.7.6
