@@ -1,67 +1,62 @@
 import easyocr
 import numpy as np
 import pyautogui
-from audioplayer import AudioPlayer
-from gtts import gTTS
-from pynput import mouse, keyboard
+from pynput import keyboard
 import threading
-
-reader = easyocr.Reader(['en'])
-COMBINATION = {keyboard.Key.pause}
-pressed_key = set()
-start_x, start_y = 0, 0
+import pyttsx3
 
 
-def screenshot_ocr(start_x, start_y, end_x, end_y):
-    width = abs(end_x - start_x)
-    height = abs(end_y - start_y)
-    x = min(start_x, end_x)
-    y = min(start_y, end_y)
-    screenshot = pyautogui.screenshot(region=(x, y, width, height))
-    image = np.array(screenshot)
-    ocr_texts = reader.readtext(image, detail=0)
-    print(ocr_texts)
-    tts_string = " ".join(ocr_texts)  # Combine the OCR texts into a single string
-    return tts_string
+class ScreenSnipper:
+    def __init__(self):
+        self.start_x, self.start_y = 0, 0
+        self.button_pressed = False
+        self.reader = easyocr.Reader(['en'])
+        self.engine = pyttsx3.init()
+        self.voices = self.engine.getProperty('voices')
+        self.engine.setProperty('voice', self.voices[1].id)
 
+    def screenshot_ocr(self, end_x, end_y):
+        width = abs(end_x - self.start_x)
+        height = abs(end_y - self.start_y)
+        x = min(self.start_x, end_x)
+        y = min(self.start_y, end_y)
+        screenshot = pyautogui.screenshot(region=(x, y, width, height))
+        image = np.array(screenshot)
+        ocr_texts = self.reader.readtext(image, detail=0)
+        tts_string = " ".join(ocr_texts)
+        print("Text:", tts_string)
+        return tts_string
 
-def on_click(press_x, press_y, button, pressed):
-    global start_x, start_y
-    if pressed and button == mouse.Button.left:
-        start_x, start_y = press_x, press_y
-    if not pressed:
-        tts_string = screenshot_ocr(start_x, start_y, press_x, press_y)
-        threading.Thread(target=generate_and_play_audio, args=(tts_string,)).start()
-        return False
+    def generate_and_play_audio(self, tts_string):
+        if self.engine._inLoop:
+            self.engine.endLoop()
+        self.engine.say(text=tts_string)
+        self.engine.runAndWait()
 
+    def keypress_listener(self):
+        def on_press(key):
+            if key == keyboard.Key.pause:
+                if not self.button_pressed:
+                    print("Move your mouse to next position and press the button again")
+                    self.start_x, self.start_y = pyautogui.position()
+                    self.button_pressed = True
+                else:
+                    end_x, end_y = pyautogui.position()
+                    if abs(self.start_x - end_x) < 50:
+                        print("Region too small, please try again and select region with bigger area")
+                    else:
+                        tts_string = self.screenshot_ocr(end_x, end_y)
+                        threading.Thread(target=self.generate_and_play_audio, args=(tts_string,)).start()
+                    self.button_pressed = False
 
-def generate_and_play_audio(tts_string):
-    tts = gTTS(text=tts_string, lang='en', slow=False)
-    tts.save("output.mp3")
-    AudioPlayer("output.mp3").play(block=True)
-
-
-def keypress_listener():
-    def on_press(key):
-        pressed_key.add(key)
-        if all(k in pressed_key for k in COMBINATION):
-            with mouse.Listener(on_click=on_click) as mouse_listener:
-                print("Click and drag mouse to take screenshot!")
-                mouse_listener.join()
-                pressed_key.remove(key)
-
-    def on_release(key):
-        if key == keyboard.Key.esc:
-            return False
-        try:
-            pressed_key.remove(key)
-        except KeyError:
+        def on_release(_):
             pass
 
-    with keyboard.Listener(on_press=on_press, on_release=on_release) as key_listener:
-        print("Keyboard listener running!")
-        key_listener.join()
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as key_listener:
+            print("Keyboard listener running!")
+            key_listener.join()
 
 
 if __name__ == "__main__":
-    threading.Thread(target=keypress_listener).start()
+    screen_snipper = ScreenSnipper()
+    threading.Thread(target=screen_snipper.keypress_listener).start()
